@@ -21,42 +21,28 @@ cp .env.example .env
 # 3) Run API
 uvicorn app.main:app --reload --port 8000
 
-# 4) Try it
-curl "http://127.0.0.1:8000/signal?symbol=BTC-USD&interval=1h&provider=yahoo"
-curl "http://127.0.0.1:8000/signal?symbol=AAPL&interval=1h&provider=yahoo"
+# 4) Test:
+```
+http://127.0.0.1:8000/signal?symbol=BTC-USD&interval=1h
+http://127.0.0.1:8000/signal?symbol=AAPL&interval=1h
 ```
 
-## CLI
+CLI:
 ```bash
-python -m app.cli --symbol BTC-USD --interval 1h --provider yahoo
+python -m app.cli --symbol BTC-USD --interval 1h --provider twelvedata
 ```
 
-## Notes
-- **Yahoo Finance (`yfinance`)** is great to prototype: intraday can be delayed and limited.  
-- **Twelve Data** gives real-time candles (requires API key).  
-- **News**: Finnhub if key is set, else Yahoo news fallback.  
-- Indicators via `pandas-ta`. Candlestick patterns implemented in pure pandas (no TA‑Lib build headaches).
-- All outputs are for **education/paper trading**. Do your own research; markets are risky.
 
-## Example Response
+## Simple Output (default)
+The API and CLI now return a compact payload so it's easy to act on:
 ```json
 {
-  "symbol": "BTC-USD",
-  "interval": "1h",
-  "as_of": "2025-08-15T12:45:00Z",
-  "decision": "long",
-  "confidence": 0.62,
-  "risk": {
-    "atr": 325.8,
-    "stop_loss": 62812.4,
-    "take_profit": 65690.1,
-    "direction": "long"
-  },
-  "why": {
-    "ta": {"rsi": 34.9, "macd_hist": -12.1, "bb_pos": "lower_band_zone"},
-    "patterns": ["bullish_engulfing"],
-    "news": {"sentiment": "neutral", "confidence": 0.55, "top_headlines": ["...","..."]},
-    "rules_fired": ["rsi_oversold", "near_lower_band", "bullish_engulfing"]
-  }
+  "signal": "buy",
+  "side": "long",
+  "entry_price": 64512.34,
+  "take_profit": 65988.45,
+  "stop_loss": 63610.22,
+  "confidence": 0.72,
+  "reason": "buy due to trend moderate (ADX 21.4); RSI 29.8 oversold; bullish_engulfing; news neutral."
 }
 ```
