@@ -24,35 +24,40 @@ def fetch_ohlcv(symbol: str, interval: str = "1h") -> pd.DataFrame:
     td_iv = _map_iv(interval)
 
     # SDK path (preferred):
+    # --- SDK path (preferred) ---
     if _HAS_TD_SDK:
         td = TDClient(apikey=TWELVEDATA_API_KEY)
         ts = td.time_series(symbol=symbol, interval=td_iv, outputsize=5000)
-        df = ts.as_pandas()  # index is datetime, columns: open, high, low, close, volume
+        df = ts.as_pandas()  # index = DatetimeIndex; columns = open, high, low, close, volume (varies in case)
         if df is None or df.empty:
             raise RuntimeError("Twelve Data SDK returned no data")
-        df = df.reset_index().rename(columns={"index":"time"})
-        df = df[["time","open","high","low","close","volume"]]
-        df["time"] = pd.to_datetime(df["time"])
+
+        # Capture index name BEFORE reset_index (often 'datetime' or None)
+        idx_name = df.index.name or "index"
+        df = df.reset_index()
+
+        # Normalize time column name to 'time'
+        rename_map = {idx_name: "time", "datetime": "time", "Datetime": "time"}
+        df = df.rename(columns=rename_map)
+
+        # Normalize OHLCV column names to lowercase and ensure presence
+        df.columns = [c.lower() for c in df.columns]
+        # Sometimes SDK returns strings; coerce to numeric
+        for c in ["open", "high", "low", "close", "volume"]:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+
+        # Ensure time is datetime64[ns, UTC] or naive datetime (either is fine for our pipeline)
+        if "time" not in df.columns:
+            # fallback: try to find a datetime-like column
+            for candidate in ["datetime", "date"]:
+                if candidate in df.columns:
+                    df = df.rename(columns={candidate: "time"})
+                    break
+        df["time"] = pd.to_datetime(df["time"], errors="coerce")
+
+        # Keep only needed columns, sorted by ascending time
+        df = df[["time", "open", "high", "low", "close", "volume"]].dropna(subset=["time"])
         df = df.sort_values("time").reset_index(drop=True)
+
         return ensure_ohlcv_columns(df)
-    
-    # --- HTTP fallback (if SDK not installed) ---
-    params = {
-        "symbol": symbol,
-        "interval": td_iv,
-        "apikey": TWELVEDATA_API_KEY,
-        "outputsize": 5000,
-        "format": "JSON",
-    }
-    r = httpx.get("https://api.twelvedata.com/time_series", params=params, timeout=20)
-    r.raise_for_status()
-    data = r.json()
-    if "values" not in data:
-        raise RuntimeError(f"Twelve Data error: {data}")
-    rows = data["values"]
-    df = pd.DataFrame(rows).rename(columns={"datetime": "time"})
-    for c in ["open", "high", "low", "close", "volume"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
-    df["time"] = pd.to_datetime(df["time"])
-    df = df.sort_values("time").reset_index(drop=True)
-    return ensure_ohlcv_columns(df)
